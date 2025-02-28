@@ -5,9 +5,6 @@ monitored_bp = Blueprint("monitored", __name__)
 
 @monitored_bp.route("/monitored_users", methods=["POST"])
 def add_monitored_user():
-    """
-    Agrega un usuario de Twitter/X a la lista de monitoreo de una cuenta autenticada.
-    """
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Usuario no autenticado"}), 401
@@ -32,11 +29,9 @@ def add_monitored_user():
     else:
         return jsonify({"error": "El usuario ya estaba siendo monitoreado"}), 409
 
+
 @monitored_bp.route("/monitored_users", methods=["GET"])
 def get_monitored_users():
-    """
-    Obtiene la lista de usuarios de Twitter/X que la cuenta autenticada está monitoreando.
-    """
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Usuario no autenticado"}), 401
@@ -49,11 +44,9 @@ def get_monitored_users():
 
     return jsonify([{"twitter_username": u[0], "twitter_user_id": u[1]} for u in users]), 200
 
+
 @monitored_bp.route("/monitored_users/<twitter_user_id>", methods=["DELETE"])
 def delete_monitored_user(twitter_user_id):
-    """
-    Elimina un usuario monitoreado por la cuenta autenticada.
-    """
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "Usuario no autenticado"}), 401

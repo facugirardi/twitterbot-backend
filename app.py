@@ -11,7 +11,7 @@ from services.fetch_tweets import fetch_tweets_for_all_users
 
 app = Flask(__name__)
 app.config.from_object(Config)
-CORS(app, origins=["http://localhost:3000"])
+CORS(app, origins=["http://localhost:3000"], supports_credentials=True)
 
 # Variables globales para el hilo y el evento
 fetcher_thread = None
@@ -28,24 +28,18 @@ def home():
     return {"message": "Bienvenido a la API de Twitter Bot"}
 
 def start_tweet_fetcher():
-    """
-    Función que inicia el servicio de recolección de tweets.
-    Esta función ahora usa un contexto de aplicación Flask para evitar errores.
-    """
     print('🚀 Iniciando el servicio de recolección de tweets...')
 
     async def fetch_loop():
-        # Crear un contexto de aplicación Flask
         with app.app_context():
             while not fetching_event.is_set():
                 try:
-                    # Ejecutar fetch_tweets_for_all_users como una tarea cancelable
                     task = asyncio.create_task(fetch_tweets_for_all_users(fetching_event))
-                    await task  # Esperar a que la tarea termine
+                    await task 
                     if fetching_event.is_set():
-                        break  # Salir si el evento está activado
-                    print("⏳ Esperando 10 minutos antes de la próxima búsqueda...")
-                    await asyncio.sleep(600)  # Esperar 10 minutos sin bloquear el hilo
+                        break 
+                    print("⏳ Esperando 30 segundos antes de la próxima búsqueda...")
+                    await asyncio.sleep(30) 
                 except asyncio.CancelledError:
                     print("⏹️ Tarea cancelada por solicitud de detención.")
                     break
@@ -55,34 +49,27 @@ def start_tweet_fetcher():
 
         print("⏹️ Servicio de recolección detenido.")
 
-    # Ejecutar el bucle asíncrono
     asyncio.run(fetch_loop())
     
 @app.route("/start-fetch", methods=["POST"])
 def start_fetch():
-    """
-    Endpoint para iniciar el proceso de recolección de tweets.
-    """
     global fetcher_thread
 
     if fetcher_thread is None or not fetcher_thread.is_alive():
-        fetching_event.clear()  # Aseguramos que el evento está limpio
+        fetching_event.clear() 
         fetcher_thread = threading.Thread(target=start_tweet_fetcher, daemon=True)
-        fetcher_thread.start()  # Inicia el hilo
+        fetcher_thread.start() 
         return jsonify({"status": "started"}), 200
     else:
         return jsonify({"status": "already running"}), 400
 
 @app.route("/stop-fetch", methods=["POST"])
 def stop_fetch():
-    """
-    Endpoint para detener el proceso de recolección de tweets.
-    """
     global fetcher_thread
 
     if fetcher_thread is not None and fetcher_thread.is_alive():
-        fetching_event.set()  # Detener el evento
-        fetcher_thread.join(timeout=5)  # Esperar a que el hilo termine
+        fetching_event.set() 
+        fetcher_thread.join(timeout=5)
         return jsonify({"status": "stopped"}), 200
     else:
         return jsonify({"status": "not running", "message": "El proceso de recolección no está en ejecución."}), 400

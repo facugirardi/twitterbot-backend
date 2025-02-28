@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, request, session, url_for
+from flask import Blueprint, redirect, request, session, url_for, jsonify
 from requests_oauthlib import OAuth1Session
 from services.db_service import run_query
 from config import Config
@@ -8,14 +8,11 @@ auth_bp = Blueprint("auth", __name__)
 REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token"
 AUTHORIZATION_URL = "https://api.twitter.com/oauth/authenticate"
 ACCESS_TOKEN_URL = "https://api.twitter.com/oauth/access_token"
-CALLBACK_URL = "http://localhost:5000/auth/callback"  # 🔹 Asegúrate de que coincida con la de Twitter
+CALLBACK_URL = "http://localhost:5000/auth/callback" 
 
 @auth_bp.route("/login")
 def login():
-    """
-    Redirige al usuario a Twitter/X para autenticación OAuth 1.0a.
-    """
-    session.clear()  # 🔹 Limpiar sesión anterior para evitar tokens inválidos
+    session.clear() 
 
     twitter = OAuth1Session(
         Config.TWITTER_CLIENT_ID,
@@ -43,11 +40,9 @@ def login():
         print(f"❌ Error en OAuth: {e}")
         return "Error en autenticación con Twitter", 500
 
+
 @auth_bp.route("/callback")
 def callback():
-    """
-    Procesa la respuesta de Twitter y guarda el usuario en la base de datos.
-    """
     print(f"🔹 Parámetros recibidos en /callbacak: {request.args}")
 
     oauth_token = request.args.get("oauth_token")
@@ -75,7 +70,6 @@ def callback():
     )
 
     try:
-        # Aquí se pasa el `oauth_verifier` que Twitter X nos dio
         tokens = twitter.fetch_access_token(ACCESS_TOKEN_URL, verifier=oauth_verifier)
 
         twitter_id = tokens["user_id"]
@@ -85,7 +79,6 @@ def callback():
 
         print(f"✅ Usuario autenticado: {username} ({twitter_id})")
 
-        # Guardar usuario en la base de datos
         query = f"""
         INSERT INTO users (twitter_id, username, access_token, access_token_secret)
         VALUES ('{twitter_id}', '{username}', '{access_token}', '{access_token_secret}')
@@ -109,10 +102,40 @@ def callback():
         print(f"❌ Error en callback: {e}")
         return "Error en autenticación con Twitter", 500
 
+
 @auth_bp.route("/logout")
 def logout():
-    """
-    Cierra la sesión del usuario.
-    """
     session.clear()
     return redirect("http://localhost:3000"), 200
+
+
+@auth_bp.route("/save-user", methods=["POST"])
+def save_user():
+    try:
+        data = request.get_json()
+        twitter_id = data.get("twitter_id")
+        username = data.get("username")
+        password = data.get("password") 
+        session_token = data.get("session")
+
+        if not twitter_id or not session_token:
+            return jsonify({"success": False, "message": "twitter_id y session son obligatorios"}), 400
+
+        query = f"""
+        INSERT INTO users (twitter_id, username, password, session)
+        VALUES ('{twitter_id}', '{username}', {'NULL' if password is None else f"'{password}'"}, '{session_token}')
+        ON CONFLICT (twitter_id) DO UPDATE
+        SET username = '{username}', session = '{session_token}'
+        RETURNING id;
+        """
+
+        user_id = run_query(query, fetchone=True)
+
+        if user_id:
+            return jsonify({"success": True, "user_id": user_id[0]}), 201
+        else:
+            return jsonify({"success": False, "message": "Error al guardar usuario"}), 500
+
+    except Exception as e:
+        print(f"❌ Error en /save-user: {e}")
+        return jsonify({"success": False, "message": "Error en el servidor"}), 500
