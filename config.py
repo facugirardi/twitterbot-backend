@@ -7,8 +7,8 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
     DB_HOST = os.getenv("DB_HOST", "aws-0-us-west-1.pooler.supabase.com")
     DB_PORT = os.getenv("DB_PORT", "6543")
-    DB_USER = os.getenv("DB_USER", "postgres.tmosrdszzpgfdbexstbu")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "TwitBot0123!")
+    DB_USER = os.getenv("DB_USER", "1")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "1")
     DB_NAME = os.getenv("DB_NAME", "postgres")
     
     TWITTER_CLIENT_ID = os.getenv("TWITTER_CLIENT_ID")
