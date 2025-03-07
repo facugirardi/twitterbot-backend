@@ -3,7 +3,11 @@ from flask import g
 from config import Config
 from openai import OpenAI
 
-client = OpenAI(api_key=Config.OPENAI_API_KEY)
+
+def get_openai_api_key():
+    query = "SELECT key FROM api_keys WHERE id = 1"
+    result = run_query(query, fetchone=True)
+    return result[0] if result else None  
 
 def get_db():
     if 'db' not in g:
@@ -52,6 +56,13 @@ def log_event(user_id, event_type, description):
 
 
 def translate_text_with_openai(text, target_language, custom_style):
+    api_key = get_openai_api_key()
+    if not api_key:
+        print("❌ No se pudo obtener la API Key de OpenAI.")
+        return None
+
+    client = OpenAI(api_key=api_key)
+
     prompt = f"Translate the following text (not the usernames (@)) into only this language: {target_language}: '{text}'. {custom_style}. Focus solely on the general message without adding irrelevant or distracting details or text. NEVER add a text that is not a translation of the original text example: 'Sure! Here’s the translation:'"
     try:
         response = client.chat.completions.create(

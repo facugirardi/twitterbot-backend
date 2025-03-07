@@ -7,6 +7,13 @@ import os
 
 logging.basicConfig(level=logging.INFO)
 
+
+def get_rapidapi_key():
+    query = "SELECT key FROM api_keys WHERE id = 3" 
+    result = run_query(query, fetchone=True)
+    return result[0] if result else None  
+
+
 def post_tweet(user_id, tweet_text):
     query = f"SELECT session FROM users WHERE id = {user_id}"
     result = run_query(query, fetchone=True)
@@ -19,6 +26,13 @@ def post_tweet(user_id, tweet_text):
         return {"error": "Usuario no encontrado"}, 404
     
     session = result[0]
+    
+    rapidapi_key = get_rapidapi_key()
+    if not rapidapi_key:
+        error_message = "❌ No se pudo obtener la API Key de RapidAPI."
+        logging.error(error_message)
+        log_event(user_id, "ERROR", error_message)
+        return {"error": "No se pudo obtener la API Key de RapidAPI"}, 500
 
     url = "https://twttrapi.p.rapidapi.com/create-tweet"
     
@@ -30,7 +44,7 @@ def post_tweet(user_id, tweet_text):
 
     payload = f"tweet_text={tweet_text}"
     headers = {
-        "x-rapidapi-key": os.getenv("RAPID_API_KEY"),
+        "x-rapidapi-key": rapidapi_key,
         "x-rapidapi-host": "twttrapi.p.rapidapi.com",
         "Content-Type": "application/x-www-form-urlencoded",
         "twttr-session": session

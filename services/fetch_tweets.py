@@ -8,13 +8,15 @@ from services.post_tweets import post_tweet
 SOCIALDATA_API_URL = "https://api.socialdata.tools/twitter/search"
 TWEET_LIMIT_PER_HOUR = 10
 
-async def get_tweet_limit_per_hour():
-    """
-    Obtiene el límite de tweets por hora desde la base de datos.
-    """
-    query = "SELECT rate_limit FROM configuration WHERE id = 1"
+def get_socialdata_api_key():
+    query = "SELECT key FROM api_keys WHERE id = 2"  
     result = run_query(query, fetchone=True)
-    return result[0] if result else 10  # Valor por defecto en caso de error
+    return result[0] if result else None 
+
+async def get_tweet_limit_per_hour(user_id):
+    query = f"SELECT rate_limit FROM users WHERE id = {user_id}"
+    result = run_query(query, fetchone=True)
+    return result[0] if result else 10 
 
 async def count_tweets_for_user(user_id):
     query = f"""
@@ -71,15 +73,15 @@ async def fetch_tweets_for_user(session, user_id, username, limit, fetching_even
                 save_collected_tweet(user_id, "username", username, tweet_id, tweet_text, created_at)
                 print(f"💾 Tweet guardado en la base de datos: {tweet_id}")
 
-                # Publicar el tweet
-                response, status_code = post_tweet(user_id, tweet_text)
-                if status_code == 200:
-                    # Si el tweet fue publicado exitosamente, eliminarlo de collected_tweets
-                    delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
-                    run_query(delete_query)
-                    print(f"🗑️ Tweet {tweet_id} eliminado de la base de datos después de ser publicado.")
-                else:
-                    print(f"❌ No se pudo publicar el tweet de {username}: {response.get('error')}")
+                # # Publicar el tweet
+                # response, status_code = post_tweet(user_id, tweet_text)
+                # if status_code == 200:
+                #     # Si el tweet fue publicado exitosamente, eliminarlo de collected_tweets
+                #     delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
+                #     run_query(delete_query)
+                #     print(f"🗑️ Tweet {tweet_id} eliminado de la base de datos después de ser publicado.")
+                # else:
+                #     print(f"❌ No se pudo publicar el tweet de {username}: {response.get('error')}")
 
                 # Pequeña pausa para evitar sobrecargar el sistema (opcional)
                 await asyncio.sleep(0.1)
@@ -89,16 +91,10 @@ async def fetch_tweets_for_user(session, user_id, username, limit, fetching_even
         print(f"❌ Error con {username}: {e}")
         
 async def fetch_tweets_for_keyword(session, user_id, keyword, limit, fetching_event):
-    """
-    Función asíncrona para buscar tweets con una palabra clave monitoreada.
-    Se detiene si el evento fetching_event está activado.
-    """
-    # Verificar si el proceso debe detenerse
     if fetching_event.is_set():
         print(f"⏹️ Proceso detenido para keyword: {keyword}.")
         return
 
-    # Contar tweets recolectados hoy
     tweets_collected_today = await count_tweets_for_user(user_id)
     if tweets_collected_today >= TWEET_LIMIT_PER_HOUR:
         print(f"⛔ Usuario {user_id} alcanzó el límite de {TWEET_LIMIT_PER_HOUR} tweets hoy. Saltando keyword {keyword}.")
@@ -114,18 +110,15 @@ async def fetch_tweets_for_keyword(session, user_id, keyword, limit, fetching_ev
             tweets = data.get("tweets", [])[:limit]
 
             for tweet in tweets:
-                # Verificar nuevamente si el proceso debe detenerse
                 if fetching_event.is_set():
                     print(f"⏹️ Proceso detenido mientras se procesaban tweets con keyword: {keyword}.")
                     break
 
-                # Contar tweets recolectados hoy
                 tweets_collected_today = await count_tweets_for_user(user_id)
                 if tweets_collected_today >= TWEET_LIMIT_PER_HOUR:
                     print(f"⛔ Usuario {user_id} alcanzó el límite mientras recolectaba. Deteniendo keyword {keyword}.")
                     break
 
-                # Extraer datos del tweet
                 tweet_id = tweet["id_str"]
                 tweet_text = tweet["full_text"]
                 created_at = tweet["tweet_created_at"]
@@ -134,17 +127,12 @@ async def fetch_tweets_for_keyword(session, user_id, keyword, limit, fetching_ev
                 save_collected_tweet(user_id, "keyword", keyword, tweet_id, tweet_text, created_at)
                 print(f"💾 Tweet guardado en la base de datos: {tweet_id}")
 
-                # Publicar el tweet
-                response, status_code = post_tweet(user_id, tweet_text)
-                if status_code == 201:
-                    # Si el tweet fue publicado exitosamente, eliminarlo de collected_tweets
-                    delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
-                    run_query(delete_query)
-                    print(f"🗑️ Tweet {tweet_id} eliminado de la base de datos después de ser publicado.")
-                else:
-                    print(f"❌ No se pudo publicar el tweet con keyword '{keyword}': {response.get('error')}")
+                # response, status_code = post_tweet(user_id, tweet_text)
+                # if status_code == 201:
+                #     print(f"🗑️ Tweet {tweet_id} publicado.")
+                # else:
+                #     print(f"❌ No se pudo publicar el tweet con keyword '{keyword}': {response.get('error')}")
 
-                # Pequeña pausa para evitar sobrecargar el sistema (opcional)
                 await asyncio.sleep(0.1)
 
     except Exception as e:
@@ -153,19 +141,13 @@ async def fetch_tweets_for_keyword(session, user_id, keyword, limit, fetching_ev
 
 
 async def fetch_tweets_for_monitored_users_with_keywords(session, user_id, monitored_users, keywords, limit, fetching_event):
-    """
-    Función asíncrona para buscar tweets de usuarios monitoreados que contengan palabras clave específicas.
-    Se detiene si el evento fetching_event está activado.
-    """
     try:
-        # Verificar si el proceso debe detenerse
         if fetching_event.is_set():
             print(f"⏹️ Proceso detenido para usuario ID: {user_id}.")
             return
         
-        TWEET_LIMIT_PER_HOUR = await get_tweet_limit_per_hour()
+        TWEET_LIMIT_PER_HOUR = await get_tweet_limit_per_hour(user_id)
 
-        # Contar tweets recolectados hoy
         tweets_collected_today = await count_tweets_for_user(user_id)
         if tweets_collected_today >= TWEET_LIMIT_PER_HOUR:
             print(f"⛔ Usuario {user_id} alcanzó el límite de {TWEET_LIMIT_PER_HOUR} tweets. Saltando completamente la búsqueda.")
@@ -173,14 +155,20 @@ async def fetch_tweets_for_monitored_users_with_keywords(session, user_id, monit
 
         print(f"🔍 Buscando tweets para usuario ID: {user_id} con palabras clave específicas...")
 
-        # Construir la consulta combinada
         query_parts = []
         for username in monitored_users:
-            keyword_query = " OR ".join(keywords)  # Combinar palabras clave con OR
+            keyword_query = " OR ".join(keywords) 
             query_parts.append(f"(from:{username} ({keyword_query}))")
-        full_query = " OR ".join(query_parts)  # Combinar todas las consultas con OR
+        full_query = " OR ".join(query_parts) 
+        
+        socialdata_api_key = get_socialdata_api_key()
+        if not socialdata_api_key:
+            print("❌ No se pudo obtener la API Key de SocialData.")
+            return
 
-        headers = {"Authorization": f"Bearer {Config.SOCIALDATA_API_KEY}"}
+        headers = {"Authorization": f"Bearer {socialdata_api_key}"}
+
+        # headers = {"Authorization": f"Bearer {Config.SOCIALDATA_API_KEY}"}
         params = {"query": full_query, "type": "Latest"}
 
         async with session.get(SOCIALDATA_API_URL, headers=headers, params=params) as response:
@@ -188,18 +176,15 @@ async def fetch_tweets_for_monitored_users_with_keywords(session, user_id, monit
             tweets = data.get("tweets", [])[:limit]
 
             for tweet in tweets:
-                # Verificar nuevamente si el proceso debe detenerse
                 if fetching_event.is_set():
                     print(f"⏹️ Proceso detenido mientras se procesaban tweets.")
                     break
 
-                # Contar tweets recolectados hoy
                 tweets_collected_today = await count_tweets_for_user(user_id)
                 if tweets_collected_today >= TWEET_LIMIT_PER_HOUR:
                     print(f"⛔ Usuario {user_id} alcanzó el límite mientras recolectaba. Deteniendo la búsqueda.")
                     break
 
-                # Extraer datos del tweet
                 tweet_id = tweet["id_str"]
                 tweet_text = tweet["full_text"]
                 created_at = tweet["tweet_created_at"]
@@ -208,20 +193,20 @@ async def fetch_tweets_for_monitored_users_with_keywords(session, user_id, monit
                 save_collected_tweet(user_id, "combined", None, tweet_id, tweet_text, created_at)
                 print(f"💾 Tweet guardado en la base de datos: {tweet_id}")
 
-                query = f"""
-                SELECT tweet_text FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'                
-                """
-                result = run_query(query, fetchone=True)
+                # query = f"""
+                # SELECT tweet_text FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'                
+                # """
+                # result = run_query(query, fetchone=True)
 
-                if result != 'None':
-                    response, status_code = post_tweet(user_id, result)
+                # if result != 'None':
+                #     response, status_code = post_tweet(user_id, result)
                 
-                if status_code == 200:
-                    delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
-                    run_query(delete_query)
-                    print(f"🗑️ Tweet {tweet_id} eliminado de la base de datos después de ser publicado.")
-                else:
-                    print(f"❌ No se pudo publicar el tweet {result}: {response.get('error')}")
+                # if status_code == 200:
+                #     delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
+                #     run_query(delete_query)
+                #     print(f"🗑️ Tweet {tweet_id} eliminado de la base de datos después de ser publicado.")
+                # else:
+                #     print(f"❌ No se pudo publicar el tweet {result}: {response.get('error')}")
 
                 await asyncio.sleep(0.1)
 
@@ -327,7 +312,6 @@ async def fetch_tweets_for_single_user(user_id, fetching_event):
 async def fetch_tweets_for_all_users(fetching_event):
     print("🔍 Buscando tweets para cada usuario registrado (etapa 1)...")
 
-    # Consultar usuarios registrados en la base de datos
     query = "SELECT DISTINCT id FROM users"
     users = run_query(query, fetchall=True)
     print(users)
@@ -336,7 +320,6 @@ async def fetch_tweets_for_all_users(fetching_event):
         print("⚠ No hay usuarios registrados en la base de datos.")
         return
 
-    # Crear tareas para buscar tweets para cada usuario
     tasks = []
     for user_id in users:
         if fetching_event.is_set():
@@ -347,10 +330,8 @@ async def fetch_tweets_for_all_users(fetching_event):
         task = asyncio.create_task(fetch_tweets_for_single_user(user_id[0], fetching_event))
         tasks.append(task)
 
-        # Pequeña pausa para evitar sobrecargar el sistema (opcional)
         await asyncio.sleep(0.1)
 
-    # Esperar a que todas las tareas terminen o se cancelen
     try:
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
@@ -372,6 +353,114 @@ def auto_post_tweet():
         print("✅ Tweet automático publicado exitosamente.")
     else:
         print(f"❌ Error al publicar el tweet automático: {response.get('error')}")
+
+
+
+async def post_tweets_for_all_users(posting_event):
+    print("🚀 Iniciando publicación de tweets para cada usuario registrado...")
+
+    query = "SELECT DISTINCT id FROM users"
+    users = run_query(query, fetchall=True)
+    print(users)
+
+    if not users:
+        print("⚠ No hay usuarios registrados en la base de datos.")
+        return
+
+    tasks = []
+    for user_id in users:
+        if posting_event.is_set():
+            print("⏹️ Proceso detenido por solicitud de usuario.")
+            return
+
+        print(f"📢 Iniciando publicación de tweets para usuario ID: {user_id[0]}")
+        task = asyncio.create_task(post_tweets_for_single_user(user_id[0], posting_event))
+        tasks.append(task)
+
+        await asyncio.sleep(0.1)
+
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        print("⏹️ Tareas de publicación canceladas por solicitud de detención.")
+
+    print("✅ Publicación de tweets completada.")
+
+async def post_tweets_for_single_user(user_id, posting_event):
+    print(f"📢 Iniciando publicación de tweets para usuario ID: {user_id}...")
+
+    if posting_event.is_set():
+        print(f"⏹️ Proceso detenido para usuario ID: {user_id}.")
+        return
+
+    # Verificar límite de tweets por hora
+    tweet_limit = await get_tweet_limit_per_hour(user_id)
+    tweets_posted_last_hour = await count_tweets_for_user(user_id)
+
+    if tweets_posted_last_hour >= tweet_limit:
+        print(f"⛔ Usuario {user_id} alcanzó el límite de {tweet_limit} tweets por hora. Saltando publicación.")
+        return
+
+    query_tweets = f"SELECT tweet_id, tweet_text FROM collected_tweets WHERE user_id = '{user_id}'"
+    tweets_to_post = run_query(query_tweets, fetchall=True) or []
+
+    if not tweets_to_post:
+        print(f"⚠ Usuario {user_id} no tiene tweets pendientes de publicación.")
+        return
+
+    async with aiohttp.ClientSession() as session:
+        await post_tweets_for_user(session, user_id, tweets_to_post, posting_event, tweet_limit, tweets_posted_last_hour)
+
+    print(f"✅ Publicación de tweets completada para usuario ID: {user_id}.")
+
+async def post_tweets_for_user(session, user_id, tweets, posting_event, tweet_limit, tweets_posted_last_hour):
+    try:
+        if posting_event.is_set():
+            print(f"⏹️ Proceso detenido para usuario ID: {user_id}.")
+            return
+
+        print(f"📢 Publicando tweets para usuario ID: {user_id}...")
+
+        for tweet_id, tweet_text in tweets:
+            if posting_event.is_set():
+                print(f"⏹️ Proceso detenido mientras se publicaban tweets.")
+                break
+
+            if tweets_posted_last_hour >= tweet_limit:
+                print(f"⛔ Usuario {user_id} alcanzó el límite mientras publicaba. Deteniendo la publicación.")
+                break
+
+            # Verificar si el tweet ya fue publicado
+            check_query = f"SELECT 1 FROM posted_tweets WHERE user_id = '{user_id}' AND tweet_text = '{tweet_text}' LIMIT 1"
+            exists = run_query(check_query, fetchone=True)
+            
+            if exists:
+                print(f"⚠ El tweet ya fue publicado previamente. Saltando: {tweet_text[:50]}...")
+                continue
+
+            response, status_code = post_tweet(user_id, tweet_text)
+
+            if status_code == 200:
+                # Guardar el tweet en posted_tweets
+                insert_query = f"INSERT INTO posted_tweets (user_id, tweet_text, created_at) VALUES ('{user_id}', '{tweet_text}', NOW())"
+                run_query(insert_query)
+                print(f"✅ Tweet guardado en posted_tweets: {tweet_text[:50]}...")
+                
+                # Eliminar el tweet de collected_tweets
+                delete_query = f"DELETE FROM collected_tweets WHERE tweet_id = '{tweet_id}' AND user_id = '{user_id}'"
+                run_query(delete_query)
+                print(f"🗑️ Tweet eliminado de collected_tweets después de ser publicado: {tweet_text[:50]}...")
+                
+                tweets_posted_last_hour += 1  # Incrementar contador de tweets publicados
+            else:
+                print(f"❌ No se pudo publicar el tweet: {response.get('error')}")
+
+            await asyncio.sleep(0.1)
+
+    except asyncio.CancelledError:
+        print(f"⏹️ Publicación de tweets cancelada para usuario ID: {user_id}.")
+
+    print(f"✅ Publicación de tweets finalizada para usuario ID: {user_id}.")
 
 
 async def start_tweet_fetcher():
